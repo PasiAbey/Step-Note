@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">StepNote</string>
+
+    <!-- Home Screen -->
+    <string name="welcome_message">Welcome back, PasiAbey</string>
+    <string name="daily_steps">Daily Steps</string>
+    <string name="daily_steps_count">6,000</string>
+    <string name="daily_steps_goal">Goal: 10,000</string>
+    <string name="learning_time">Learning Time</string>
+    <string name="learning_days">12 Days</string>
+    <string name="total_steps">Total Steps</string>
+    <string name="total_steps_count">120,000</string>
+    <string name="start_learning">Start Learning</string>
+    <string name="learn_with_flashcards">Learn with Flashcards</string>
+    <string name="flashcards_description">Quickly memorize key concepts with interactive flashcards.</string>
+    <string name="listen_to_audio_notes">Listen to Audio Notes</string>
+    <string name="audio_notes_description">Absorb information on the go with concise audio summaries.</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_flashcards">Flashcards</string>
+    <string name="nav_audio_notes">Audio Notes</string>
+    <string name="nav_profile">Profile</string>
+
+
+
+    <string name="tap_to_flip">Tap to flip</string>
+    <string name="all_flashcards">All Flashcards</string>
+</resources>
