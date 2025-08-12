@@ -2,25 +2,37 @@ package com.example.stepnotev2;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import android.widget.EditText;
 import java.util.List;
 
 public class FlashcardsActivity extends AppCompatActivity {
 
-    private TextView tvCardContent, tvCardProgress, tvFlashcardCount;
-    private LinearLayout flashcardContainer, btnPrevious, btnNext, btnAddFlashcard;
+    private TextView tvCardContent, tvCardProgress, tvFlashcardCount, tvTapToFlip;
+    private LinearLayout flashcardContainer, btnAddFlashcard;
     private LinearLayout flashcardsContainer;
 
     private DatabaseHelper databaseHelper;
     private List<Flashcard> flashcards;
     private int currentCardIndex = 0;
     private boolean isShowingQuestion = true;
+    private boolean isAnimating = false; // Prevent multiple simultaneous animations
+
+    // Gesture detection
+    private GestureDetector gestureDetector;
+    private static final int SWIPE_THRESHOLD = 80;
+    private static final int SWIPE_VELOCITY_THRESHOLD = 80;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,6 +43,7 @@ public class FlashcardsActivity extends AppCompatActivity {
         loadFlashcardsFromDatabase();
 
         initViews();
+        setupGestureDetector();
         setupDynamicFlashcardList();
         updateFlashcardCount();
         setupNavigationListeners();
@@ -56,11 +69,167 @@ public class FlashcardsActivity extends AppCompatActivity {
         tvCardContent = findViewById(R.id.tvCardContent);
         tvCardProgress = findViewById(R.id.tvCardProgress);
         tvFlashcardCount = findViewById(R.id.tvFlashcardCount);
+        tvTapToFlip = findViewById(R.id.tvTapToFlip);
         flashcardContainer = findViewById(R.id.flashcardContainer);
-        btnPrevious = findViewById(R.id.btnPrevious);
-        btnNext = findViewById(R.id.btnNext);
         btnAddFlashcard = findViewById(R.id.btnAddFlashcard);
         flashcardsContainer = findViewById(R.id.flashcardsContainer);
+    }
+
+    private void setupGestureDetector() {
+        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+                if (e1 == null || e2 == null || isAnimating) return false;
+
+                float diffX = e2.getX() - e1.getX();
+                float diffY = e2.getY() - e1.getY();
+
+                // Check if horizontal swipe is more significant than vertical
+                if (Math.abs(diffX) > Math.abs(diffY)) {
+                    if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
+                        if (diffX > 0) {
+                            // Swipe right - go to previous card
+                            onSwipeRight();
+                        } else {
+                            // Swipe left - go to next card
+                            onSwipeLeft();
+                        }
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            @Override
+            public boolean onSingleTapUp(MotionEvent e) {
+                // Handle tap to flip (only if not animating)
+                if (!flashcards.isEmpty() && !isAnimating) {
+                    flipCard();
+                }
+                return true;
+            }
+        });
+    }
+
+    private void onSwipeLeft() {
+        // Go to next card with loop
+        if (flashcards.isEmpty() || isAnimating) {
+            if (flashcards.isEmpty()) {
+                Toast.makeText(this, "No flashcards available", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        if (currentCardIndex < flashcards.size() - 1) {
+            // Normal next card
+            animateCardTransition(true, () -> {
+                currentCardIndex++;
+                isShowingQuestion = true;
+                updateFlashcard();
+            });
+        } else {
+            // At last card, loop to first card
+            animateCardTransition(true, () -> {
+                currentCardIndex = 0;
+                isShowingQuestion = true;
+                updateFlashcard();
+                showLoopMessage("🔄 Back to first card");
+            });
+        }
+    }
+
+    private void onSwipeRight() {
+        // Go to previous card with loop
+        if (flashcards.isEmpty() || isAnimating) {
+            if (flashcards.isEmpty()) {
+                Toast.makeText(this, "No flashcards available", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        if (currentCardIndex > 0) {
+            // Normal previous card
+            animateCardTransition(false, () -> {
+                currentCardIndex--;
+                isShowingQuestion = true;
+                updateFlashcard();
+            });
+        } else {
+            // At first card, loop to last card
+            animateCardTransition(false, () -> {
+                currentCardIndex = flashcards.size() - 1;
+                isShowingQuestion = true;
+                updateFlashcard();
+                showLoopMessage("🔄 Jumped to last card");
+            });
+        }
+    }
+
+    private void showLoopMessage(String message) {
+        // Show a subtle indication that we've looped
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    private void animateCardTransition(boolean isNext, Runnable onComplete) {
+        if (isAnimating) return;
+        isAnimating = true;
+
+        // Calculate slide distances
+        float slideDistance = flashcardContainer.getWidth() * 1.2f;
+        float exitX = isNext ? -slideDistance : slideDistance;
+        float enterX = isNext ? slideDistance : -slideDistance;
+
+        // Phase 1: Slide out current card with rotation and scale
+        flashcardContainer.animate()
+                .translationX(exitX)
+                .rotation(isNext ? -15f : 15f)
+                .scaleX(0.8f)
+                .scaleY(0.8f)
+                .alpha(0f)
+                .setDuration(300)
+                .setInterpolator(new AccelerateDecelerateInterpolator())
+                .withEndAction(() -> {
+                    // Update content while card is off-screen
+                    onComplete.run();
+
+                    // Reset transformations and position for entry
+                    flashcardContainer.setRotation(isNext ? 15f : -15f);
+                    flashcardContainer.setScaleX(0.8f);
+                    flashcardContainer.setScaleY(0.8f);
+                    flashcardContainer.setAlpha(0f);
+                    flashcardContainer.setTranslationX(enterX);
+
+                    // Phase 2: Slide in new card with spring effect
+                    flashcardContainer.animate()
+                            .translationX(0f)
+                            .rotation(0f)
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .alpha(1f)
+                            .setDuration(400)
+                            .setInterpolator(new OvershootInterpolator(0.8f))
+                            .withEndAction(() -> {
+                                isAnimating = false;
+                            })
+                            .start();
+                })
+                .start();
+    }
+
+    private void updateFlashcardAppearance() {
+        if (isShowingQuestion) {
+            // Blue background, white text for questions
+            flashcardContainer.setBackground(ContextCompat.getDrawable(this, R.drawable.flashcard_background_blue));
+            tvCardContent.setTextColor(ContextCompat.getColor(this, R.color.white));
+            tvTapToFlip.setTextColor(ContextCompat.getColor(this, R.color.white));
+            tvTapToFlip.setText("Tap to see answer");
+        } else {
+            // White background, blue text for answers (exact border color match)
+            flashcardContainer.setBackground(ContextCompat.getDrawable(this, R.drawable.flashcard_background_white));
+            tvCardContent.setTextColor(ContextCompat.getColor(this, R.color.flashcard_blue_text)); // Exact border color
+            tvTapToFlip.setTextColor(ContextCompat.getColor(this, R.color.flashcard_blue_instruction)); // Lighter for instruction
+            tvTapToFlip.setText("Tap to see question");
+        }
     }
 
     private void setupDynamicFlashcardList() {
@@ -108,6 +277,10 @@ public class FlashcardsActivity extends AppCompatActivity {
         }
         tvCreatedDate.setText(createdDate != null ? createdDate : "Unknown");
 
+        // No highlighting - all cards have the same appearance
+        view.setBackground(getResources().getDrawable(R.drawable.card_background, null));
+        view.setAlpha(1.0f);
+
         // Set click listeners
         view.setOnClickListener(v -> onFlashcardClick(flashcard, position));
         btnEdit.setOnClickListener(v -> onEditClick(flashcard, position));
@@ -123,37 +296,9 @@ public class FlashcardsActivity extends AppCompatActivity {
     }
 
     private void setupFlashcardListeners() {
-        // Flip card when tapped
-        flashcardContainer.setOnClickListener(v -> {
-            if (!flashcards.isEmpty()) {
-                flipCard();
-            }
-        });
-
-        // Previous card
-        btnPrevious.setOnClickListener(v -> {
-            if (!flashcards.isEmpty() && currentCardIndex > 0) {
-                currentCardIndex--;
-                isShowingQuestion = true;
-                updateFlashcard();
-            } else if (flashcards.isEmpty()) {
-                Toast.makeText(this, "No flashcards available", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this, "This is the first card", Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        // Next card
-        btnNext.setOnClickListener(v -> {
-            if (!flashcards.isEmpty() && currentCardIndex < flashcards.size() - 1) {
-                currentCardIndex++;
-                isShowingQuestion = true;
-                updateFlashcard();
-            } else if (flashcards.isEmpty()) {
-                Toast.makeText(this, "No flashcards available", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this, "This is the last card", Toast.LENGTH_SHORT).show();
-            }
+        // Set touch listener for gesture detection
+        flashcardContainer.setOnTouchListener((v, event) -> {
+            return gestureDetector.onTouchEvent(event);
         });
 
         // Add new flashcard
@@ -161,16 +306,29 @@ public class FlashcardsActivity extends AppCompatActivity {
     }
 
     private void flipCard() {
-        // Animate flip effect
+        if (isAnimating) return;
+        isAnimating = true;
+
+        // Enhanced flip animation with 3D effect
         flashcardContainer.animate()
                 .scaleX(0f)
-                .setDuration(150)
+                .rotationY(90f)
+                .setDuration(200)
+                .setInterpolator(new AccelerateDecelerateInterpolator())
                 .withEndAction(() -> {
                     isShowingQuestion = !isShowingQuestion;
                     updateCardContent();
+                    updateFlashcardAppearance(); // Update colors when flipping
+
+                    // Flip back with spring effect
                     flashcardContainer.animate()
                             .scaleX(1f)
-                            .setDuration(150)
+                            .rotationY(0f)
+                            .setDuration(200)
+                            .setInterpolator(new OvershootInterpolator(0.5f))
+                            .withEndAction(() -> {
+                                isAnimating = false;
+                            })
                             .start();
                 })
                 .start();
@@ -180,11 +338,27 @@ public class FlashcardsActivity extends AppCompatActivity {
         if (flashcards.isEmpty()) {
             tvCardContent.setText("No flashcards available\n\nTap 'Add New Flashcard' to get started!");
             tvCardProgress.setText("0 cards");
+            // Set default blue appearance for empty state
+            flashcardContainer.setBackground(ContextCompat.getDrawable(this, R.drawable.flashcard_background_blue));
+            tvCardContent.setTextColor(ContextCompat.getColor(this, R.color.white));
             return;
         }
 
         updateCardContent();
-        tvCardProgress.setText("Card " + (currentCardIndex + 1) + " of " + flashcards.size());
+        updateFlashcardAppearance(); // Update colors based on question/answer state
+
+        // Animate progress text update
+        tvCardProgress.animate()
+                .alpha(0f)
+                .setDuration(100)
+                .withEndAction(() -> {
+                    tvCardProgress.setText("Card " + (currentCardIndex + 1) + " of " + flashcards.size());
+                    tvCardProgress.animate()
+                            .alpha(1f)
+                            .setDuration(100)
+                            .start();
+                })
+                .start();
     }
 
     private void updateCardContent() {
@@ -266,21 +440,30 @@ public class FlashcardsActivity extends AppCompatActivity {
 
     // Flashcard click handlers
     public void onFlashcardClick(Flashcard flashcard, int position) {
-        // Jump to this flashcard in the main viewer
-        currentCardIndex = position;
-        isShowingQuestion = true;
-        updateFlashcard();
+        if (isAnimating) return; // Prevent action during animation
 
-        // Scroll to top to show the main flashcard viewer
-        findViewById(R.id.flashcardContainer).requestFocus();
-        Toast.makeText(this, "Jumped to: " + flashcard.getQuestion(), Toast.LENGTH_SHORT).show();
+        // Jump to this flashcard in the main viewer with smooth transition
+        if (position != currentCardIndex) {
+            boolean isNext = position > currentCardIndex;
+            animateCardTransition(isNext, () -> {
+                currentCardIndex = position;
+                isShowingQuestion = true;
+                updateFlashcard();
+            });
+            Toast.makeText(this, "Jumped to: " + flashcard.getQuestion(), Toast.LENGTH_SHORT).show();
+        } else {
+            // Same card, just flip it
+            flipCard();
+        }
     }
 
     public void onEditClick(Flashcard flashcard, int position) {
+        if (isAnimating) return;
         showEditFlashcardDialog(flashcard, position);
     }
 
     public void onDeleteClick(Flashcard flashcard, int position) {
+        if (isAnimating) return;
         showDeleteConfirmationDialog(flashcard, position);
     }
 
@@ -370,13 +553,15 @@ public class FlashcardsActivity extends AppCompatActivity {
                 Toast.makeText(this, "You're already on Flashcards!", Toast.LENGTH_SHORT).show()
         );
 
-        findViewById(R.id.navAudioNotes).setOnClickListener(v ->
-                Toast.makeText(this, "Audio Notes - Coming Soon!", Toast.LENGTH_SHORT).show()
-        );
+        findViewById(R.id.navAudioNotes).setOnClickListener(v -> {
+            startActivity(new Intent(this, AudioNotesActivity.class));
+            finish();
+        });
 
-        findViewById(R.id.navProfile).setOnClickListener(v ->
-                Toast.makeText(this, "Profile - Coming Soon!", Toast.LENGTH_SHORT).show()
-        );
+        findViewById(R.id.navProfile).setOnClickListener(v -> {
+            startActivity(new Intent(this, ProfileActivity.class));
+            finish();
+        });
     }
 
     @Override

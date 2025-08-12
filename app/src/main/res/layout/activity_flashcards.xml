@@ -50,11 +50,11 @@
         <LinearLayout
             android:id="@+id/flashcardContainer"
             android:layout_width="match_parent"
-            android:layout_height="200dp"
+            android:layout_height="220dp"
             android:layout_marginStart="16dp"
             android:layout_marginTop="8dp"
             android:layout_marginEnd="16dp"
-            android:background="@drawable/flashcard_background"
+            android:background="@drawable/flashcard_background_blue"
             android:gravity="center"
             android:orientation="vertical"
             android:padding="24dp"
@@ -72,6 +72,7 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/tvTapToFlip"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -93,54 +94,49 @@
             android:textColor="@color/text_secondary"
             android:textSize="14sp" />
 
-        <!-- Action Buttons -->
+        <!-- Swipe Instructions -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
             android:layout_marginTop="16dp"
             android:layout_marginEnd="16dp"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:gravity="center">
 
-            <LinearLayout
-                android:id="@+id/btnPrevious"
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="← Swipe (Loop)"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:alpha="0.7" />
+
+            <View
                 android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginEnd="8dp"
-                android:layout_weight="1"
-                android:background="@drawable/card_background"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center">
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="← Previous"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔄 Infinite Loop"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:alpha="0.7" />
 
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/btnNext"
+            <View
                 android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:background="@drawable/card_background"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center">
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Next →"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-
-            </LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Swipe (Loop) →"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:alpha="0.7" />
 
         </LinearLayout>
 
