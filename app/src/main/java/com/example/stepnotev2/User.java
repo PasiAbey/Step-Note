@@ -1,26 +1,35 @@
 package com.example.stepnotev2;
 
 public class User {
-    private long id;
+    private int id;
     private String name;
     private String email;
+    private String password;
     private String profileImagePath;
     private String joinDate;
-    private boolean isLoggedIn;
 
+    // Constructors
     public User() {}
 
-    public User(String name, String email) {
+    public User(String name, String email, String password) {
         this.name = name;
         this.email = email;
+        this.password = password;
+    }
+
+    public User(String name, String email, String password, String joinDate) {
+        this.name = name;
+        this.email = email;
+        this.password = password;
+        this.joinDate = joinDate;
     }
 
     // Getters and Setters
-    public long getId() {
+    public int getId() {
         return id;
     }
 
-    public void setId(long id) {
+    public void setId(int id) {
         this.id = id;
     }
 
@@ -40,6 +49,14 @@ public class User {
         this.email = email;
     }
 
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
     public String getProfileImagePath() {
         return profileImagePath;
     }
@@ -56,14 +73,6 @@ public class User {
         this.joinDate = joinDate;
     }
 
-    public boolean isLoggedIn() {
-        return isLoggedIn;
-    }
-
-    public void setLoggedIn(boolean loggedIn) {
-        isLoggedIn = loggedIn;
-    }
-
     @Override
     public String toString() {
         return "User{" +
@@ -72,7 +81,6 @@ public class User {
                 ", email='" + email + '\'' +
                 ", profileImagePath='" + profileImagePath + '\'' +
                 ", joinDate='" + joinDate + '\'' +
-                ", isLoggedIn=" + isLoggedIn +
                 '}';
     }
 }

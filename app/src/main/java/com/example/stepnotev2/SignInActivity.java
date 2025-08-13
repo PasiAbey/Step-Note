@@ -80,8 +80,8 @@ public class SignInActivity extends AppCompatActivity {
             return;
         }
 
-        // Authenticate user
-        User user = databaseHelper.authenticateUser(email, password);
+        // Authenticate user using the correct method name
+        User user = databaseHelper.loginUser(email, password);
 
         if (user != null) {
             Toast.makeText(this, "Welcome back, " + user.getName() + "! 👋", Toast.LENGTH_SHORT).show();

@@ -5,452 +5,612 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.util.Log;
-import java.util.ArrayList;
-import java.util.List;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
 
-    private static final String TAG = "DatabaseHelper";
-    private static final String DATABASE_NAME = "stepnote_v2.db";
-    private static final int DATABASE_VERSION = 5; // Increment again to force upgrade
+    // Database info
+    private static final String DATABASE_NAME = "stepnote.db";
+    private static final int DATABASE_VERSION = 4; // Updated version for new changes
 
-    // Users table
+    // Table names
     private static final String TABLE_USERS = "users";
-    private static final String USER_ID = "id";
-    private static final String USER_NAME = "name";
-    private static final String USER_EMAIL = "email";
-    private static final String USER_PASSWORD = "password";
-    private static final String USER_PROFILE_IMAGE_PATH = "profile_image_path";
-    private static final String USER_JOIN_DATE = "join_date";
-    private static final String USER_IS_LOGGED_IN = "is_logged_in";
-    private static final String USER_CREATED_AT = "created_at";
-
-    // Flashcards table
     private static final String TABLE_FLASHCARDS = "flashcards";
-    private static final String FLASHCARD_ID = "id";
-    private static final String FLASHCARD_QUESTION = "question";
-    private static final String FLASHCARD_ANSWER = "answer";
-    private static final String FLASHCARD_CREATED_DATE = "created_date";
-
-    // Audio notes table
     private static final String TABLE_AUDIO_NOTES = "audio_notes";
-    private static final String AUDIO_ID = "id";
-    private static final String AUDIO_TITLE = "title";
-    private static final String AUDIO_DURATION = "duration";
-    private static final String AUDIO_FILE_PATH = "file_path";
-    private static final String AUDIO_FILE_NAME = "file_name";
-    private static final String AUDIO_FILE_SIZE = "file_size";
-    private static final String AUDIO_CREATED_DATE = "created_date";
+    private static final String TABLE_STEPS = "daily_steps";
+    private static final String TABLE_USER_STATS = "user_stats";
 
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
-        Log.d(TAG, "DatabaseHelper initialized with version: " + DATABASE_VERSION);
     }
 
     @Override
     public void onCreate(SQLiteDatabase db) {
-        Log.d(TAG, "Creating database tables from scratch...");
-
-        createAllTables(db);
-        Log.d(TAG, "All tables created successfully");
-    }
-
-    private void createAllTables(SQLiteDatabase db) {
-        // Create Users table
-        String createUsersTable = "CREATE TABLE IF NOT EXISTS " + TABLE_USERS + "("
-                + USER_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
-                + USER_NAME + " TEXT NOT NULL,"
-                + USER_EMAIL + " TEXT UNIQUE NOT NULL,"
-                + USER_PASSWORD + " TEXT NOT NULL,"
-                + USER_PROFILE_IMAGE_PATH + " TEXT,"
-                + USER_JOIN_DATE + " TEXT,"
-                + USER_IS_LOGGED_IN + " INTEGER DEFAULT 0,"
-                + USER_CREATED_AT + " DATETIME DEFAULT CURRENT_TIMESTAMP"
-                + ")";
-        db.execSQL(createUsersTable);
-        Log.d(TAG, "Users table created");
-
-        // Create Flashcards table
-        String createFlashcardsTable = "CREATE TABLE IF NOT EXISTS " + TABLE_FLASHCARDS + "("
-                + FLASHCARD_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
-                + FLASHCARD_QUESTION + " TEXT NOT NULL,"
-                + FLASHCARD_ANSWER + " TEXT NOT NULL,"
-                + FLASHCARD_CREATED_DATE + " TEXT NOT NULL"
-                + ")";
-        db.execSQL(createFlashcardsTable);
-        Log.d(TAG, "Flashcards table created");
-
-        // Create Audio Notes table - THIS IS THE MISSING TABLE!
-        String createAudioNotesTable = "CREATE TABLE IF NOT EXISTS " + TABLE_AUDIO_NOTES + "("
-                + AUDIO_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
-                + AUDIO_TITLE + " TEXT NOT NULL,"
-                + AUDIO_DURATION + " TEXT NOT NULL,"
-                + AUDIO_FILE_PATH + " TEXT,"
-                + AUDIO_FILE_NAME + " TEXT,"
-                + AUDIO_FILE_SIZE + " INTEGER DEFAULT 0,"
-                + AUDIO_CREATED_DATE + " TEXT NOT NULL"
-                + ")";
-        db.execSQL(createAudioNotesTable);
-        Log.d(TAG, "Audio Notes table created");
+        createUsersTable(db);
+        createFlashcardsTable(db);
+        createAudioNotesTable(db);
+        createStepsTable(db);
+        createUserStatsTable(db);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        Log.d(TAG, "Upgrading database from version " + oldVersion + " to " + newVersion);
+        if (oldVersion < 3) {
+            // Add new tables if they don't exist
+            db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_STEPS + "("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + "user_id INTEGER,"
+                    + "date TEXT,"
+                    + "step_count INTEGER DEFAULT 0,"
+                    + "goal INTEGER DEFAULT 10000,"
+                    + "FOREIGN KEY(user_id) REFERENCES " + TABLE_USERS + "(id))");
 
-        // Force recreation of all tables to ensure they exist
-        Log.d(TAG, "Force creating all missing tables...");
-        createAllTables(db);
+            db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_USER_STATS + "("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + "user_id INTEGER UNIQUE,"
+                    + "first_use_date TEXT,"
+                    + "total_steps INTEGER DEFAULT 0,"
+                    + "total_days INTEGER DEFAULT 0,"
+                    + "FOREIGN KEY(user_id) REFERENCES " + TABLE_USERS + "(id))");
+        }
 
-        Log.d(TAG, "Database upgrade completed successfully");
-    }
-
-    // Check if table exists method
-    private boolean tableExists(SQLiteDatabase db, String tableName) {
-        Cursor cursor = db.rawQuery(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                new String[]{tableName}
-        );
-        boolean exists = cursor.getCount() > 0;
-        cursor.close();
-        Log.d(TAG, "Table " + tableName + " exists: " + exists);
-        return exists;
-    }
-
-    // Safe audio notes methods with table existence check
-    public List<AudioNote> getAllAudioNotes() {
-        List<AudioNote> audioNotes = new ArrayList<>();
-        SQLiteDatabase db = null;
-        Cursor cursor = null;
-
-        try {
-            db = this.getReadableDatabase();
-
-            // Check if table exists first
-            if (!tableExists(db, TABLE_AUDIO_NOTES)) {
-                Log.w(TAG, "Audio notes table doesn't exist, creating it...");
-                createAllTables(db);
-            }
-
-            Log.d(TAG, "Querying audio notes...");
-
-            cursor = db.query(TABLE_AUDIO_NOTES, null, null, null, null, null,
-                    AUDIO_ID + " DESC");
-
-            Log.d(TAG, "Audio notes cursor count: " + cursor.getCount());
-
-            if (cursor.moveToFirst()) {
-                do {
-                    try {
-                        AudioNote audioNote = new AudioNote();
-
-                        audioNote.setId(cursor.getLong(cursor.getColumnIndexOrThrow(AUDIO_ID)));
-                        audioNote.setTitle(cursor.getString(cursor.getColumnIndexOrThrow(AUDIO_TITLE)));
-                        audioNote.setDuration(cursor.getString(cursor.getColumnIndexOrThrow(AUDIO_DURATION)));
-
-                        // Handle potentially null columns safely
-                        int filePathIndex = cursor.getColumnIndex(AUDIO_FILE_PATH);
-                        if (filePathIndex != -1) {
-                            audioNote.setFilePath(cursor.getString(filePathIndex));
-                        }
-
-                        int fileNameIndex = cursor.getColumnIndex(AUDIO_FILE_NAME);
-                        if (fileNameIndex != -1) {
-                            audioNote.setFileName(cursor.getString(fileNameIndex));
-                        }
-
-                        int fileSizeIndex = cursor.getColumnIndex(AUDIO_FILE_SIZE);
-                        if (fileSizeIndex != -1) {
-                            audioNote.setFileSize(cursor.getLong(fileSizeIndex));
-                        }
-
-                        audioNote.setCreatedDate(cursor.getString(cursor.getColumnIndexOrThrow(AUDIO_CREATED_DATE)));
-
-                        audioNotes.add(audioNote);
-                        Log.d(TAG, "Added audio note: " + audioNote.getTitle());
-
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error processing audio note: " + e.getMessage());
-                        e.printStackTrace();
-                    }
-                } while (cursor.moveToNext());
-            } else {
-                Log.d(TAG, "No audio notes found in database");
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "Error getting audio notes: " + e.getMessage());
-            e.printStackTrace();
-        } finally {
-            if (cursor != null) {
-                cursor.close();
+        if (oldVersion < 4) {
+            // Add join_date column to existing users table if it doesn't exist
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_USERS + " ADD COLUMN join_date TEXT");
+                // Update existing users with their created_at date as join_date
+                db.execSQL("UPDATE " + TABLE_USERS + " SET join_date = created_at WHERE join_date IS NULL");
+            } catch (Exception e) {
+                // Column might already exist, ignore
             }
         }
-
-        Log.d(TAG, "Returning " + audioNotes.size() + " audio notes");
-        return audioNotes;
     }
 
-    public long addAudioNote(String title, String duration) {
-        SQLiteDatabase db = this.getWritableDatabase();
+    // ===== TABLE CREATION METHODS =====
 
-        // Ensure table exists
-        if (!tableExists(db, TABLE_AUDIO_NOTES)) {
-            createAllTables(db);
-        }
-
-        ContentValues values = new ContentValues();
-        values.put(AUDIO_TITLE, title);
-        values.put(AUDIO_DURATION, duration);
-        values.put(AUDIO_CREATED_DATE, getCurrentDateTime());
-
-        long id = db.insert(TABLE_AUDIO_NOTES, null, values);
-        Log.d(TAG, "Added audio note with ID: " + id);
-        return id;
+    private void createUsersTable(SQLiteDatabase db) {
+        String CREATE_USERS_TABLE = "CREATE TABLE " + TABLE_USERS + "("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "name TEXT NOT NULL,"
+                + "email TEXT UNIQUE NOT NULL,"
+                + "password TEXT NOT NULL,"
+                + "profile_image_path TEXT,"
+                + "is_logged_in INTEGER DEFAULT 0,"
+                + "created_at TEXT,"
+                + "join_date TEXT"  // Added join_date column
+                + ")";
+        db.execSQL(CREATE_USERS_TABLE);
     }
 
-    public long addAudioNote(String title, String duration, String filePath, String fileName, long fileSize) {
-        SQLiteDatabase db = this.getWritableDatabase();
-
-        // Ensure table exists
-        if (!tableExists(db, TABLE_AUDIO_NOTES)) {
-            createAllTables(db);
-        }
-
-        ContentValues values = new ContentValues();
-        values.put(AUDIO_TITLE, title);
-        values.put(AUDIO_DURATION, duration);
-        values.put(AUDIO_FILE_PATH, filePath);
-        values.put(AUDIO_FILE_NAME, fileName);
-        values.put(AUDIO_FILE_SIZE, fileSize);
-        values.put(AUDIO_CREATED_DATE, getCurrentDateTime());
-
-        long id = db.insert(TABLE_AUDIO_NOTES, null, values);
-        Log.d(TAG, "Added audio note with file, ID: " + id);
-        return id;
+    private void createFlashcardsTable(SQLiteDatabase db) {
+        String CREATE_FLASHCARDS_TABLE = "CREATE TABLE " + TABLE_FLASHCARDS + "("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "user_id INTEGER,"
+                + "front_text TEXT NOT NULL,"
+                + "back_text TEXT NOT NULL,"
+                + "created_at TEXT,"
+                + "FOREIGN KEY(user_id) REFERENCES " + TABLE_USERS + "(id)"
+                + ")";
+        db.execSQL(CREATE_FLASHCARDS_TABLE);
     }
 
-    public int updateAudioNote(long id, String title, String duration) {
+    private void createAudioNotesTable(SQLiteDatabase db) {
+        String CREATE_AUDIO_NOTES_TABLE = "CREATE TABLE " + TABLE_AUDIO_NOTES + "("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "user_id INTEGER,"
+                + "title TEXT NOT NULL,"
+                + "file_path TEXT NOT NULL,"
+                + "duration TEXT DEFAULT '00:00',"
+                + "created_at TEXT,"
+                + "FOREIGN KEY(user_id) REFERENCES " + TABLE_USERS + "(id)"
+                + ")";
+        db.execSQL(CREATE_AUDIO_NOTES_TABLE);
+    }
+
+    private void createStepsTable(SQLiteDatabase db) {
+        String CREATE_STEPS_TABLE = "CREATE TABLE " + TABLE_STEPS + "("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "user_id INTEGER,"
+                + "date TEXT,"
+                + "step_count INTEGER DEFAULT 0,"
+                + "goal INTEGER DEFAULT 10000,"
+                + "FOREIGN KEY(user_id) REFERENCES " + TABLE_USERS + "(id)"
+                + ")";
+        db.execSQL(CREATE_STEPS_TABLE);
+    }
+
+    private void createUserStatsTable(SQLiteDatabase db) {
+        String CREATE_USER_STATS_TABLE = "CREATE TABLE " + TABLE_USER_STATS + "("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "user_id INTEGER UNIQUE,"
+                + "first_use_date TEXT,"
+                + "total_steps INTEGER DEFAULT 0,"
+                + "total_days INTEGER DEFAULT 0,"
+                + "FOREIGN KEY(user_id) REFERENCES " + TABLE_USERS + "(id)"
+                + ")";
+        db.execSQL(CREATE_USER_STATS_TABLE);
+    }
+
+    // ===== USER METHODS =====
+
+    public long addUser(String name, String email, String password) {
         SQLiteDatabase db = this.getWritableDatabase();
-
-        // Ensure table exists
-        if (!tableExists(db, TABLE_AUDIO_NOTES)) {
-            createAllTables(db);
-            return 0; // No rows to update if table was just created
-        }
-
         ContentValues values = new ContentValues();
-        values.put(AUDIO_TITLE, title);
-        values.put(AUDIO_DURATION, duration);
+        values.put("name", name);
+        values.put("email", email);
+        values.put("password", password);
 
-        int result = db.update(TABLE_AUDIO_NOTES, values, AUDIO_ID + " = ?", new String[]{String.valueOf(id)});
-        Log.d(TAG, "Updated audio note ID " + id + ", result: " + result);
+        String currentDateTime = getCurrentDateTime();
+        values.put("created_at", currentDateTime);
+        values.put("join_date", currentDateTime); // Set join date when user registers
+
+        long result = db.insert(TABLE_USERS, null, values);
+        db.close();
         return result;
     }
 
-    public void deleteAudioNote(long id) {
+    public User loginUser(String email, String password) {
         SQLiteDatabase db = this.getWritableDatabase();
 
-        // Ensure table exists
-        if (!tableExists(db, TABLE_AUDIO_NOTES)) {
-            Log.w(TAG, "Cannot delete from non-existent table");
-            return;
+        // First, set all users as logged out
+        ContentValues logoutValues = new ContentValues();
+        logoutValues.put("is_logged_in", 0);
+        db.update(TABLE_USERS, logoutValues, null, null);
+
+        // Check credentials
+        Cursor cursor = db.query(TABLE_USERS, null,
+                "email = ? AND password = ?",
+                new String[]{email, password},
+                null, null, null);
+
+        User user = null;
+        if (cursor.moveToFirst()) {
+            user = new User();
+            user.setId(cursor.getInt(cursor.getColumnIndexOrThrow("id")));
+            user.setName(cursor.getString(cursor.getColumnIndexOrThrow("name")));
+            user.setEmail(cursor.getString(cursor.getColumnIndexOrThrow("email")));
+            user.setPassword(cursor.getString(cursor.getColumnIndexOrThrow("password"))); // Add password for ProfileFragment
+
+            String profilePath = cursor.getString(cursor.getColumnIndexOrThrow("profile_image_path"));
+            user.setProfileImagePath(profilePath);
+
+            // Get join date with fallback
+            int joinDateIndex = cursor.getColumnIndex("join_date");
+            if (joinDateIndex != -1) {
+                String joinDate = cursor.getString(joinDateIndex);
+                user.setJoinDate(joinDate != null ? joinDate : cursor.getString(cursor.getColumnIndexOrThrow("created_at")));
+            } else {
+                user.setJoinDate(cursor.getString(cursor.getColumnIndexOrThrow("created_at")));
+            }
+
+            // Set user as logged in
+            ContentValues loginValues = new ContentValues();
+            loginValues.put("is_logged_in", 1);
+            db.update(TABLE_USERS, loginValues, "id = ?", new String[]{String.valueOf(user.getId())});
         }
 
-        int result = db.delete(TABLE_AUDIO_NOTES, AUDIO_ID + " = ?", new String[]{String.valueOf(id)});
-        Log.d(TAG, "Deleted audio note ID " + id + ", result: " + result);
-    }
-
-    // Keep all your existing User and Flashcard methods exactly as they are...
-    // [Include all the existing methods from your original DatabaseHelper]
-
-    // User Management Methods
-    public long registerUser(String name, String email, String password) {
-        SQLiteDatabase db = this.getWritableDatabase();
-        ContentValues values = new ContentValues();
-
-        values.put(USER_NAME, name);
-        values.put(USER_EMAIL, email);
-        values.put(USER_PASSWORD, password);
-        values.put(USER_JOIN_DATE, getCurrentDate());
-        values.put(USER_IS_LOGGED_IN, 1);
-
-        return db.insert(TABLE_USERS, null, values);
-    }
-
-    public User authenticateUser(String email, String password) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        String[] columns = {USER_ID, USER_NAME, USER_EMAIL, USER_PROFILE_IMAGE_PATH, USER_JOIN_DATE};
-        String selection = USER_EMAIL + " = ? AND " + USER_PASSWORD + " = ?";
-        String[] selectionArgs = {email, password};
-
-        Cursor cursor = db.query(TABLE_USERS, columns, selection, selectionArgs, null, null, null);
-
-        if (cursor != null && cursor.moveToFirst()) {
-            User user = new User();
-            user.setId(cursor.getLong(cursor.getColumnIndexOrThrow(USER_ID)));
-            user.setName(cursor.getString(cursor.getColumnIndexOrThrow(USER_NAME)));
-            user.setEmail(cursor.getString(cursor.getColumnIndexOrThrow(USER_EMAIL)));
-            user.setProfileImagePath(cursor.getString(cursor.getColumnIndexOrThrow(USER_PROFILE_IMAGE_PATH)));
-            user.setJoinDate(cursor.getString(cursor.getColumnIndexOrThrow(USER_JOIN_DATE)));
-
-            cursor.close();
-
-            // Update login status
-            updateUserLoginStatus(user.getId(), true);
-
-            return user;
-        }
-
-        if (cursor != null) {
-            cursor.close();
-        }
-        return null;
-    }
-
-    public boolean isEmailExists(String email) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        String[] columns = {USER_ID};
-        String selection = USER_EMAIL + " = ?";
-        String[] selectionArgs = {email};
-
-        Cursor cursor = db.query(TABLE_USERS, columns, selection, selectionArgs, null, null, null);
-        boolean exists = cursor != null && cursor.getCount() > 0;
-
-        if (cursor != null) {
-            cursor.close();
-        }
-
-        return exists;
+        cursor.close();
+        db.close();
+        return user;
     }
 
     public User getCurrentLoggedInUser() {
         SQLiteDatabase db = this.getReadableDatabase();
-        String[] columns = {USER_ID, USER_NAME, USER_EMAIL, USER_PROFILE_IMAGE_PATH, USER_JOIN_DATE};
-        String selection = USER_IS_LOGGED_IN + " = ?";
-        String[] selectionArgs = {"1"};
 
-        Cursor cursor = db.query(TABLE_USERS, columns, selection, selectionArgs, null, null, null);
+        Cursor cursor = db.query(TABLE_USERS, null,
+                "is_logged_in = 1",
+                null, null, null, null);
 
-        if (cursor != null && cursor.moveToFirst()) {
-            User user = new User();
-            user.setId(cursor.getLong(cursor.getColumnIndexOrThrow(USER_ID)));
-            user.setName(cursor.getString(cursor.getColumnIndexOrThrow(USER_NAME)));
-            user.setEmail(cursor.getString(cursor.getColumnIndexOrThrow(USER_EMAIL)));
-            user.setProfileImagePath(cursor.getString(cursor.getColumnIndexOrThrow(USER_PROFILE_IMAGE_PATH)));
-            user.setJoinDate(cursor.getString(cursor.getColumnIndexOrThrow(USER_JOIN_DATE)));
+        User user = null;
+        if (cursor.moveToFirst()) {
+            user = new User();
+            user.setId(cursor.getInt(cursor.getColumnIndexOrThrow("id")));
+            user.setName(cursor.getString(cursor.getColumnIndexOrThrow("name")));
+            user.setEmail(cursor.getString(cursor.getColumnIndexOrThrow("email")));
+            user.setPassword(cursor.getString(cursor.getColumnIndexOrThrow("password"))); // Add password for ProfileFragment
 
-            cursor.close();
-            return user;
+            String profilePath = cursor.getString(cursor.getColumnIndexOrThrow("profile_image_path"));
+            user.setProfileImagePath(profilePath);
+
+            // Get join date with fallback
+            int joinDateIndex = cursor.getColumnIndex("join_date");
+            if (joinDateIndex != -1) {
+                String joinDate = cursor.getString(joinDateIndex);
+                user.setJoinDate(joinDate != null ? joinDate : cursor.getString(cursor.getColumnIndexOrThrow("created_at")));
+            } else {
+                user.setJoinDate(cursor.getString(cursor.getColumnIndexOrThrow("created_at")));
+            }
         }
 
-        if (cursor != null) {
-            cursor.close();
-        }
-        return null;
+        cursor.close();
+        db.close();
+        return user;
     }
 
-    public void updateUserLoginStatus(long userId, boolean isLoggedIn) {
+    public void logoutUser() {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues values = new ContentValues();
-        values.put(USER_IS_LOGGED_IN, isLoggedIn ? 1 : 0);
-
-        db.update(TABLE_USERS, values, USER_ID + " = ?", new String[]{String.valueOf(userId)});
-    }
-
-    public void logoutAllUsers() {
-        SQLiteDatabase db = this.getWritableDatabase();
-        ContentValues values = new ContentValues();
-        values.put(USER_IS_LOGGED_IN, 0);
-
+        values.put("is_logged_in", 0);
         db.update(TABLE_USERS, values, null, null);
+        db.close();
     }
 
-    public int updateUserProfile(long userId, String name, String email, String profileImagePath) {
+    // Updated for ProfileFragment compatibility
+    public int updateUserProfile(int userId, String name, String email, String profileImagePath) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues values = new ContentValues();
-
-        values.put(USER_NAME, name);
-        values.put(USER_EMAIL, email);
-        if (profileImagePath != null && !profileImagePath.isEmpty()) {
-            values.put(USER_PROFILE_IMAGE_PATH, profileImagePath);
+        values.put("name", name);
+        values.put("email", email);
+        if (profileImagePath != null) {
+            values.put("profile_image_path", profileImagePath);
         }
 
-        return db.update(TABLE_USERS, values, USER_ID + " = ?", new String[]{String.valueOf(userId)});
+        int rowsAffected = db.update(TABLE_USERS, values, "id = ?", new String[]{String.valueOf(userId)});
+        db.close();
+        return rowsAffected;
     }
 
-    public int updateUserPassword(long userId, String newPassword) {
+    // Overloaded method for backward compatibility
+    public boolean updateUserProfile(int userId, String name, String profileImagePath) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues values = new ContentValues();
-        values.put(USER_PASSWORD, newPassword);
+        values.put("name", name);
+        if (profileImagePath != null) {
+            values.put("profile_image_path", profileImagePath);
+        }
 
-        return db.update(TABLE_USERS, values, USER_ID + " = ?", new String[]{String.valueOf(userId)});
+        int rowsAffected = db.update(TABLE_USERS, values, "id = ?", new String[]{String.valueOf(userId)});
+        db.close();
+        return rowsAffected > 0;
     }
 
-    // Existing Flashcard methods
-    public long addFlashcard(String question, String answer) {
+    // New method for ProfileFragment password update
+    public int updateUserPassword(int userId, String newPassword) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues values = new ContentValues();
+        values.put("password", newPassword);
 
-        values.put(FLASHCARD_QUESTION, question);
-        values.put(FLASHCARD_ANSWER, answer);
-        values.put(FLASHCARD_CREATED_DATE, getCurrentDateTime());
-
-        return db.insert(TABLE_FLASHCARDS, null, values);
+        int rowsAffected = db.update(TABLE_USERS, values, "id = ?", new String[]{String.valueOf(userId)});
+        db.close();
+        return rowsAffected;
     }
 
-    public List<Flashcard> getAllFlashcards() {
+    // New method for ProfileFragment login status update
+    public void updateUserLoginStatus(int userId, boolean isLoggedIn) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("is_logged_in", isLoggedIn ? 1 : 0);
+        db.update(TABLE_USERS, values, "id = ?", new String[]{String.valueOf(userId)});
+        db.close();
+    }
+
+    // Renamed method for ProfileFragment compatibility
+    public boolean isEmailExists(String email) {
+        return emailExists(email);
+    }
+
+    public boolean emailExists(String email) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(TABLE_USERS, null,
+                "email = ?", new String[]{email},
+                null, null, null);
+
+        boolean exists = cursor.getCount() > 0;
+        cursor.close();
+        db.close();
+        return exists;
+    }
+
+    // ===== FLASHCARD METHODS =====
+
+    public long addFlashcard(int userId, String frontText, String backText) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("user_id", userId);
+        values.put("front_text", frontText);
+        values.put("back_text", backText);
+        values.put("created_at", getCurrentDateTime());
+
+        long result = db.insert(TABLE_FLASHCARDS, null, values);
+        db.close();
+        return result;
+    }
+
+    public List<Flashcard> getUserFlashcards(int userId) {
         List<Flashcard> flashcards = new ArrayList<>();
         SQLiteDatabase db = this.getReadableDatabase();
 
-        Cursor cursor = db.query(TABLE_FLASHCARDS, null, null, null, null, null,
-                FLASHCARD_ID + " DESC");
+        Cursor cursor = db.query(TABLE_FLASHCARDS, null,
+                "user_id = ?",
+                new String[]{String.valueOf(userId)},
+                null, null, "created_at DESC");
 
         if (cursor.moveToFirst()) {
             do {
                 Flashcard flashcard = new Flashcard();
-                flashcard.setId(cursor.getLong(cursor.getColumnIndexOrThrow(FLASHCARD_ID)));
-                flashcard.setQuestion(cursor.getString(cursor.getColumnIndexOrThrow(FLASHCARD_QUESTION)));
-                flashcard.setAnswer(cursor.getString(cursor.getColumnIndexOrThrow(FLASHCARD_ANSWER)));
-                flashcard.setCreatedDate(cursor.getString(cursor.getColumnIndexOrThrow(FLASHCARD_CREATED_DATE)));
-
+                flashcard.setId(cursor.getInt(cursor.getColumnIndexOrThrow("id")));
+                flashcard.setUserId(cursor.getInt(cursor.getColumnIndexOrThrow("user_id")));
+                flashcard.setFrontText(cursor.getString(cursor.getColumnIndexOrThrow("front_text")));
+                flashcard.setBackText(cursor.getString(cursor.getColumnIndexOrThrow("back_text")));
+                flashcard.setCreatedAt(cursor.getString(cursor.getColumnIndexOrThrow("created_at")));
                 flashcards.add(flashcard);
             } while (cursor.moveToNext());
         }
 
         cursor.close();
+        db.close();
         return flashcards;
     }
 
-    public int updateFlashcard(long id, String question, String answer) {
+    // New method for ProfileFragment statistics
+    public int getUserFlashcardsCount(int userId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM " + TABLE_FLASHCARDS + " WHERE user_id = ?",
+                new String[]{String.valueOf(userId)});
+
+        int count = 0;
+        if (cursor.moveToFirst()) {
+            count = cursor.getInt(0);
+        }
+
+        cursor.close();
+        db.close();
+        return count;
+    }
+
+    public boolean updateFlashcard(int flashcardId, String frontText, String backText) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues values = new ContentValues();
+        values.put("front_text", frontText);
+        values.put("back_text", backText);
 
-        values.put(FLASHCARD_QUESTION, question);
-        values.put(FLASHCARD_ANSWER, answer);
-
-        return db.update(TABLE_FLASHCARDS, values, FLASHCARD_ID + " = ?", new String[]{String.valueOf(id)});
+        int rowsAffected = db.update(TABLE_FLASHCARDS, values, "id = ?", new String[]{String.valueOf(flashcardId)});
+        db.close();
+        return rowsAffected > 0;
     }
 
-    public void deleteFlashcard(long id) {
+    public boolean deleteFlashcard(int flashcardId) {
         SQLiteDatabase db = this.getWritableDatabase();
-        db.delete(TABLE_FLASHCARDS, FLASHCARD_ID + " = ?", new String[]{String.valueOf(id)});
+        int rowsDeleted = db.delete(TABLE_FLASHCARDS, "id = ?", new String[]{String.valueOf(flashcardId)});
+        db.close();
+        return rowsDeleted > 0;
     }
 
-    // Utility methods
-    private String getCurrentDateTime() {
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-        Date date = new Date();
-        return dateFormat.format(date);
+    // ===== AUDIO NOTES METHODS =====
+
+    public long addAudioNote(int userId, String title, String filePath) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("user_id", userId);
+        values.put("title", title);
+        values.put("file_path", filePath);
+        values.put("duration", "00:00");
+        values.put("created_at", getCurrentDateTime());
+
+        long result = db.insert(TABLE_AUDIO_NOTES, null, values);
+        db.close();
+        return result;
     }
+
+    public List<AudioNote> getUserAudioNotes(int userId) {
+        List<AudioNote> audioNotes = new ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+
+        Cursor cursor = db.query(TABLE_AUDIO_NOTES, null,
+                "user_id = ?",
+                new String[]{String.valueOf(userId)},
+                null, null, "created_at DESC");
+
+        if (cursor.moveToFirst()) {
+            do {
+                AudioNote audioNote = new AudioNote();
+                audioNote.setId(cursor.getInt(cursor.getColumnIndexOrThrow("id")));
+                audioNote.setUserId(cursor.getInt(cursor.getColumnIndexOrThrow("user_id")));
+                audioNote.setTitle(cursor.getString(cursor.getColumnIndexOrThrow("title")));
+                audioNote.setFilePath(cursor.getString(cursor.getColumnIndexOrThrow("file_path")));
+                audioNote.setDuration(cursor.getString(cursor.getColumnIndexOrThrow("duration")));
+                audioNote.setCreatedAt(cursor.getString(cursor.getColumnIndexOrThrow("created_at")));
+                audioNotes.add(audioNote);
+            } while (cursor.moveToNext());
+        }
+
+        cursor.close();
+        db.close();
+        return audioNotes;
+    }
+
+    // New method for ProfileFragment statistics
+    public int getUserAudioNotesCount(int userId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM " + TABLE_AUDIO_NOTES + " WHERE user_id = ?",
+                new String[]{String.valueOf(userId)});
+
+        int count = 0;
+        if (cursor.moveToFirst()) {
+            count = cursor.getInt(0);
+        }
+
+        cursor.close();
+        db.close();
+        return count;
+    }
+
+    public boolean deleteAudioNote(int audioNoteId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        int rowsDeleted = db.delete(TABLE_AUDIO_NOTES, "id = ?", new String[]{String.valueOf(audioNoteId)});
+        db.close();
+        return rowsDeleted > 0;
+    }
+
+    public boolean updateAudioNote(int audioNoteId, String title, String duration) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("title", title);
+        values.put("duration", duration);
+
+        int rowsAffected = db.update(TABLE_AUDIO_NOTES, values, "id = ?", new String[]{String.valueOf(audioNoteId)});
+        db.close();
+        return rowsAffected > 0;
+    }
+
+    // ===== STEP TRACKING METHODS =====
+
+    public void updateTodaySteps(int userId, int steps) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        String today = getCurrentDate();
+
+        Cursor cursor = db.query(TABLE_STEPS, null,
+                "user_id = ? AND date = ?",
+                new String[]{String.valueOf(userId), today},
+                null, null, null);
+
+        ContentValues values = new ContentValues();
+        values.put("step_count", steps);
+
+        if (cursor.moveToFirst()) {
+            db.update(TABLE_STEPS, values,
+                    "user_id = ? AND date = ?",
+                    new String[]{String.valueOf(userId), today});
+        } else {
+            values.put("user_id", userId);
+            values.put("date", today);
+            values.put("goal", 10000);
+            db.insert(TABLE_STEPS, null, values);
+        }
+
+        cursor.close();
+        updateUserStats(userId);
+        db.close();
+    }
+
+    public int getTodaySteps(int userId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        String today = getCurrentDate();
+
+        Cursor cursor = db.query(TABLE_STEPS, new String[]{"step_count"},
+                "user_id = ? AND date = ?",
+                new String[]{String.valueOf(userId), today},
+                null, null, null);
+
+        int steps = 0;
+        if (cursor.moveToFirst()) {
+            steps = cursor.getInt(0);
+        }
+
+        cursor.close();
+        db.close();
+        return steps;
+    }
+
+    public int getTodayGoal(int userId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        String today = getCurrentDate();
+
+        Cursor cursor = db.query(TABLE_STEPS, new String[]{"goal"},
+                "user_id = ? AND date = ?",
+                new String[]{String.valueOf(userId), today},
+                null, null, null);
+
+        int goal = 10000;
+        if (cursor.moveToFirst()) {
+            goal = cursor.getInt(0);
+        }
+
+        cursor.close();
+        db.close();
+        return goal;
+    }
+
+    private void updateUserStats(int userId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+
+        // Calculate total steps
+        Cursor stepsCursor = db.rawQuery(
+                "SELECT SUM(step_count) FROM " + TABLE_STEPS + " WHERE user_id = ?",
+                new String[]{String.valueOf(userId)});
+
+        int totalSteps = 0;
+        if (stepsCursor.moveToFirst()) {
+            totalSteps = stepsCursor.getInt(0);
+        }
+        stepsCursor.close();
+
+        // Calculate total days
+        Cursor daysCursor = db.rawQuery(
+                "SELECT COUNT(DISTINCT date) FROM " + TABLE_STEPS + " WHERE user_id = ? AND step_count > 0",
+                new String[]{String.valueOf(userId)});
+
+        int totalDays = 0;
+        if (daysCursor.moveToFirst()) {
+            totalDays = daysCursor.getInt(0);
+        }
+        daysCursor.close();
+
+        // Update or insert user stats
+        ContentValues values = new ContentValues();
+        values.put("total_steps", totalSteps);
+        values.put("total_days", totalDays);
+
+        Cursor userStatsCursor = db.query(TABLE_USER_STATS, null,
+                "user_id = ?", new String[]{String.valueOf(userId)},
+                null, null, null);
+
+        if (userStatsCursor.moveToFirst()) {
+            db.update(TABLE_USER_STATS, values,
+                    "user_id = ?", new String[]{String.valueOf(userId)});
+        } else {
+            values.put("user_id", userId);
+            values.put("first_use_date", getCurrentDate());
+            db.insert(TABLE_USER_STATS, null, values);
+        }
+
+        userStatsCursor.close();
+    }
+
+    public UserStats getUserStats(int userId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        UserStats stats = new UserStats();
+
+        Cursor cursor = db.query(TABLE_USER_STATS, null,
+                "user_id = ?", new String[]{String.valueOf(userId)},
+                null, null, null);
+
+        if (cursor.moveToFirst()) {
+            stats.totalSteps = cursor.getInt(cursor.getColumnIndexOrThrow("total_steps"));
+            stats.totalDays = cursor.getInt(cursor.getColumnIndexOrThrow("total_days"));
+            stats.firstUseDate = cursor.getString(cursor.getColumnIndexOrThrow("first_use_date"));
+        }
+
+        cursor.close();
+        db.close();
+        return stats;
+    }
+
+    // ===== UTILITY METHODS =====
 
     private String getCurrentDate() {
-        SimpleDateFormat dateFormat = new SimpleDateFormat("MMMM yyyy", Locale.getDefault());
-        Date date = new Date();
-        return dateFormat.format(date);
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+        return sdf.format(new Date());
+    }
+
+    private String getCurrentDateTime() {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+        return sdf.format(new Date());
+    }
+
+    // Methods for ProfileFragment compatibility
+    public void clearLoggedInUser() {
+        logoutUser();
+    }
+
+    // Inner class for user statistics
+    public static class UserStats {
+        public int totalSteps = 0;
+        public int totalDays = 0;
+        public String firstUseDate = "";
     }
 }

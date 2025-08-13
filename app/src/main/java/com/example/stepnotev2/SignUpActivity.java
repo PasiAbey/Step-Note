@@ -93,12 +93,21 @@ public class SignUpActivity extends AppCompatActivity {
             return;
         }
 
-        // Register user
-        long userId = databaseHelper.registerUser(name, email, password);
+        // Register user using the correct method name
+        long userId = databaseHelper.addUser(name, email, password);
 
         if (userId != -1) {
-            Toast.makeText(this, "Account created successfully! Welcome, " + name + "! 🎉", Toast.LENGTH_LONG).show();
-            navigateToMain();
+            // After successful registration, automatically log the user in
+            User newUser = databaseHelper.loginUser(email, password);
+
+            if (newUser != null) {
+                Toast.makeText(this, "Account created successfully! Welcome, " + name + "! 🎉", Toast.LENGTH_LONG).show();
+                navigateToMain();
+            } else {
+                // Fallback: Registration succeeded but login failed
+                Toast.makeText(this, "Account created! Please sign in to continue.", Toast.LENGTH_LONG).show();
+                navigateToSignIn();
+            }
         } else {
             Toast.makeText(this, "Failed to create account. Please try again.", Toast.LENGTH_LONG).show();
         }
@@ -106,6 +115,13 @@ public class SignUpActivity extends AppCompatActivity {
 
     private void navigateToMain() {
         Intent intent = new Intent(this, MainActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(intent);
+        finish();
+    }
+
+    private void navigateToSignIn() {
+        Intent intent = new Intent(this, SignInActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
         finish();

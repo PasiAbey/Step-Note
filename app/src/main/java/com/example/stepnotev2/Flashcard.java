@@ -1,68 +1,71 @@
 package com.example.stepnotev2;
 
 public class Flashcard {
-    private long id;  // Changed from int to long
-    private String question;
-    private String answer;
-    private String createdDate;
+    private int id;
+    private int userId;
+    private String frontText;
+    private String backText;
+    private String createdAt;
 
-    // Default constructor
+    // Constructors
     public Flashcard() {}
 
-    // Constructor with parameters
-    public Flashcard(String question, String answer) {
-        this.question = question;
-        this.answer = answer;
-    }
-
-    // Constructor with all parameters
-    public Flashcard(long id, String question, String answer, String createdDate) {
-        this.id = id;
-        this.question = question;
-        this.answer = answer;
-        this.createdDate = createdDate;
+    public Flashcard(int userId, String frontText, String backText, String createdAt) {
+        this.userId = userId;
+        this.frontText = frontText;
+        this.backText = backText;
+        this.createdAt = createdAt;
     }
 
     // Getters and Setters
-    public long getId() {  // Changed return type from int to long
+    public int getId() {
         return id;
     }
 
-    public void setId(long id) {  // Changed parameter type from int to long
+    public void setId(int id) {
         this.id = id;
     }
 
-    public String getQuestion() {
-        return question;
+    public int getUserId() {
+        return userId;
     }
 
-    public void setQuestion(String question) {
-        this.question = question;
+    public void setUserId(int userId) {
+        this.userId = userId;
     }
 
-    public String getAnswer() {
-        return answer;
+    public String getFrontText() {
+        return frontText;
     }
 
-    public void setAnswer(String answer) {
-        this.answer = answer;
+    public void setFrontText(String frontText) {
+        this.frontText = frontText;
     }
 
-    public String getCreatedDate() {
-        return createdDate;
+    public String getBackText() {
+        return backText;
     }
 
-    public void setCreatedDate(String createdDate) {
-        this.createdDate = createdDate;
+    public void setBackText(String backText) {
+        this.backText = backText;
+    }
+
+    public String getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(String createdAt) {
+        this.createdAt = createdAt;
     }
 
     @Override
     public String toString() {
         return "Flashcard{" +
                 "id=" + id +
-                ", question='" + question + '\'' +
-                ", answer='" + answer + '\'' +
-                ", createdDate='" + createdDate + '\'' +
+                ", userId=" + userId +
+                ", frontText='" + frontText + '\'' +
+                ", backText='" + backText + '\'' +
+                ", createdAt='" + createdAt + '\'' +
                 '}';
     }
 }
