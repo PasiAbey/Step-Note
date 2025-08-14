@@ -8,7 +8,8 @@
     android:padding="16dp"
     android:clickable="true"
     android:focusable="true"
-    android:minHeight="80dp">
+    android:minHeight="80dp"
+    android:foreground="?android:attr/selectableItemBackground">
 
     <!-- Audio Icon - Fixed Size -->
     <LinearLayout
@@ -27,14 +28,14 @@
 
     </LinearLayout>
 
-    <!-- Audio Details - Fixed Width with Weight -->
+    <!-- Audio Details - Expanded to fill more space -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:orientation="vertical"
         android:layout_gravity="center_vertical"
-        android:layout_marginEnd="8dp">
+        android:layout_marginEnd="16dp">
 
         <!-- Title - Limited Characters -->
         <TextView
@@ -45,9 +46,8 @@
             android:textColor="@color/text_primary"
             android:textSize="16sp"
             android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:singleLine="true" />
+            android:maxLines="2"
+            android:ellipsize="end" />
 
         <!-- Duration -->
         <TextView
@@ -73,19 +73,16 @@
             android:alpha="0.7"
             android:maxLines="1" />
 
-        <!-- File Status - Limited Characters -->
+        <!-- Play Indicator Text -->
         <TextView
-            android:id="@+id/tvFileStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="📎 Audio file attached"
+            android:layout_marginTop="4dp"
+            android:text="Tap to play"
             android:textColor="@color/flashcard_blue"
             android:textSize="11sp"
-            android:visibility="gone"
             android:maxLines="1"
-            android:ellipsize="end"
-            android:singleLine="true" />
+            android:alpha="0.8" />
 
     </LinearLayout>
 
@@ -98,14 +95,15 @@
 
         <TextView
             android:id="@+id/btnDelete"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:background="@drawable/delete_button_background"
             android:gravity="center"
             android:text="🗑️"
-            android:textSize="14sp"
+            android:textSize="16sp"
             android:clickable="true"
-            android:focusable="true" />
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless" />
 
     </LinearLayout>
 

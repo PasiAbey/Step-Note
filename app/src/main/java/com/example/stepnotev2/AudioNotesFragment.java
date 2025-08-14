@@ -1,34 +1,32 @@
 package com.example.stepnotev2;
 
-import android.Manifest;
+import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.media.MediaPlayer;
-import android.media.MediaRecorder;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.MediaStore;
+import android.os.Handler;
+import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AlertDialog;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -36,554 +34,487 @@ import java.util.Locale;
 public class AudioNotesFragment extends Fragment {
 
     private static final String TAG = "AudioNotesFragment";
-    private static final int PERMISSION_REQUEST_CODE = 1001;
 
-    // UI Components (matching your XML)
     private LinearLayout audioNotesContainer;
     private LinearLayout btnAddAudioNote;
     private TextView tvAudioNotesCount;
-
-    // Audio recording
-    private MediaRecorder mediaRecorder;
-    private MediaPlayer mediaPlayer;
-    private boolean isRecording = false;
-    private boolean isPlaying = false;
-    private String currentRecordingPath;
-
-    // Database
     private DatabaseHelper databaseHelper;
+
+    // Media player for audio playback
+    private MediaPlayer mediaPlayer;
+    private BottomSheetDialog currentPlaybackDialog;
+    private Handler playbackHandler = new Handler();
+    private Runnable updateSeekBarRunnable;
 
     // File picker launcher
     private ActivityResultLauncher<Intent> audioPickerLauncher;
-
-    // Audio notes list
-    private List<AudioNote> audioNotesList;
-    private AudioNote currentPlayingNote;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_audio_notes, container, false);
 
         databaseHelper = new DatabaseHelper(getContext());
-        audioNotesList = new ArrayList<>();
 
         initViews(view);
-        setupAudioPickerLauncher();
-        checkPermissions();
+        setupFilePicker();
+        setupClickListeners();
         loadAudioNotes();
 
         return view;
     }
 
     private void initViews(View view) {
-        // Initialize views that exist in your XML
         audioNotesContainer = view.findViewById(R.id.audioNotesContainer);
         btnAddAudioNote = view.findViewById(R.id.btnAddAudioNote);
         tvAudioNotesCount = view.findViewById(R.id.tvAudioNotesCount);
-
-        // Set click listener for add audio note button
-        btnAddAudioNote.setOnClickListener(v -> showAddAudioNoteDialog());
     }
 
-    private void setupAudioPickerLauncher() {
+    private void setupFilePicker() {
         audioPickerLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
                     if (result.getResultCode() == getActivity().RESULT_OK && result.getData() != null) {
                         Uri audioUri = result.getData().getData();
                         if (audioUri != null) {
-                            importSelectedAudioFile(audioUri);
+                            importAudioFile(audioUri);
                         }
                     }
                 }
         );
     }
 
-    private void checkPermissions() {
-        String[] permissions = {
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-        };
-
-        List<String> missingPermissions = new ArrayList<>();
-        for (String permission : permissions) {
-            if (ContextCompat.checkSelfPermission(getContext(), permission) != PackageManager.PERMISSION_GRANTED) {
-                missingPermissions.add(permission);
-            }
-        }
-
-        if (!missingPermissions.isEmpty()) {
-            ActivityCompat.requestPermissions(getActivity(),
-                    missingPermissions.toArray(new String[0]), PERMISSION_REQUEST_CODE);
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean allGranted = true;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
-                }
-            }
-            if (!allGranted) {
-                Toast.makeText(getContext(), "Permissions required for audio recording", Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
-
-    private void showAddAudioNoteDialog() {
-        String[] options = {"Record Audio", "Import Audio File"};
-
-        new AlertDialog.Builder(getContext())
-                .setTitle("Add Audio Note")
-                .setItems(options, (dialog, which) -> {
-                    if (which == 0) {
-                        if (isRecording) {
-                            stopRecording();
-                        } else {
-                            startRecording();
-                        }
-                    } else {
-                        importAudioFile();
-                    }
-                })
-                .show();
-    }
-
-    private void startRecording() {
-        try {
-            // Create file path
-            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-            String fileName = "AudioNote_" + timeStamp + ".3gp";
-            File audioDir = new File(getContext().getFilesDir(), "audio_notes");
-            if (!audioDir.exists()) {
-                audioDir.mkdirs();
-            }
-            currentRecordingPath = new File(audioDir, fileName).getAbsolutePath();
-
-            // Setup MediaRecorder
-            mediaRecorder = new MediaRecorder();
-            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
-            mediaRecorder.setOutputFile(currentRecordingPath);
-            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
-
-            mediaRecorder.prepare();
-            mediaRecorder.start();
-
-            isRecording = true;
-
-            Log.d(TAG, "Recording started: " + currentRecordingPath);
-            Toast.makeText(getContext(), "Recording started - tap to stop", Toast.LENGTH_SHORT).show();
-
-            // Show stop recording dialog
-            showStopRecordingDialog();
-
-        } catch (IOException e) {
-            Log.e(TAG, "Error starting recording", e);
-            Toast.makeText(getContext(), "Error starting recording", Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            Log.e(TAG, "Unexpected error starting recording", e);
-            Toast.makeText(getContext(), "Error starting recording", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void showStopRecordingDialog() {
-        new AlertDialog.Builder(getContext())
-                .setTitle("Recording...")
-                .setMessage("Recording in progress. Tap 'Stop' when finished.")
-                .setPositiveButton("Stop Recording", (dialog, which) -> stopRecording())
-                .setCancelable(false)
-                .show();
-    }
-
-    private void stopRecording() {
-        if (mediaRecorder != null) {
-            try {
-                mediaRecorder.stop();
-                mediaRecorder.release();
-                mediaRecorder = null;
-
-                isRecording = false;
-
-                // Save to database
-                saveRecordingToDatabase();
-
-                Log.d(TAG, "Recording stopped");
-                Toast.makeText(getContext(), "Recording saved", Toast.LENGTH_SHORT).show();
-
-            } catch (RuntimeException e) {
-                Log.e(TAG, "Error stopping recording", e);
-                Toast.makeText(getContext(), "Error saving recording", Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
-
-    private void saveRecordingToDatabase() {
-        if (currentRecordingPath != null) {
-            User currentUser = databaseHelper.getCurrentLoggedInUser();
-            if (currentUser != null) {
-                String fileName = new File(currentRecordingPath).getName();
-                String title = fileName.replace(".3gp", "").replace("AudioNote_", "Audio Note ");
-
-                // Fixed: Cast long to int for type compatibility
-                long result = databaseHelper.addAudioNote((int) currentUser.getId(), title, currentRecordingPath);
-                if (result > 0) {
-                    loadAudioNotes(); // Refresh list
-                    Log.d(TAG, "Audio note saved to database");
-                } else {
-                    Log.e(TAG, "Failed to save audio note to database");
-                }
-            }
-        }
-    }
-
-    private void importAudioFile() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("audio/*");
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        audioPickerLauncher.launch(Intent.createChooser(intent, "Select Audio File"));
-    }
-
-    private void importSelectedAudioFile(Uri audioUri) {
-        try {
-            // Get file name
-            String fileName = getFileName(audioUri);
-            if (fileName == null) {
-                fileName = "imported_audio_" + System.currentTimeMillis() + ".mp3";
-            }
-
-            // Create destination file
-            File audioDir = new File(getContext().getFilesDir(), "audio_notes");
-            if (!audioDir.exists()) {
-                audioDir.mkdirs();
-            }
-            File destFile = new File(audioDir, fileName);
-
-            // Copy file
-            copyFile(audioUri, destFile);
-
-            // Save to database
-            User currentUser = databaseHelper.getCurrentLoggedInUser();
-            if (currentUser != null) {
-                String title = fileName.replaceAll("\\.[^.]*$", ""); // Remove extension
-
-                // Fixed: Cast long to int for type compatibility
-                long result = databaseHelper.addAudioNote((int) currentUser.getId(), title, destFile.getAbsolutePath());
-                if (result > 0) {
-                    loadAudioNotes();
-                    Toast.makeText(getContext(), "Audio file imported successfully", Toast.LENGTH_SHORT).show();
-                    Log.d(TAG, "Audio file imported: " + fileName);
-                } else {
-                    Toast.makeText(getContext(), "Failed to save audio file", Toast.LENGTH_SHORT).show();
-                }
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "Error importing audio file", e);
-            Toast.makeText(getContext(), "Error importing audio file", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private String getFileName(Uri uri) {
-        String result = null;
-        if (uri.getScheme() != null && uri.getScheme().equals("content")) {
-            try (Cursor cursor = getContext().getContentResolver().query(uri, null, null, null, null)) {
-                if (cursor != null && cursor.moveToFirst()) {
-                    int nameIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME);
-                    if (nameIndex >= 0) {
-                        result = cursor.getString(nameIndex);
-                    }
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error getting file name from content URI", e);
-            }
-        }
-        if (result == null) {
-            result = uri.getPath();
-            if (result != null) {
-                int cut = result.lastIndexOf('/');
-                if (cut != -1) {
-                    result = result.substring(cut + 1);
-                }
-            }
-        }
-        return result;
-    }
-
-    private void copyFile(Uri sourceUri, File destFile) throws IOException {
-        try (InputStream input = getContext().getContentResolver().openInputStream(sourceUri);
-             FileOutputStream output = new FileOutputStream(destFile)) {
-
-            if (input == null) {
-                throw new IOException("Cannot open input stream");
-            }
-
-            byte[] buffer = new byte[1024];
-            int length;
-            while ((length = input.read(buffer)) > 0) {
-                output.write(buffer, 0, length);
-            }
-        }
+    private void setupClickListeners() {
+        btnAddAudioNote.setOnClickListener(v -> showAddAudioNoteDialog());
     }
 
     private void loadAudioNotes() {
         User currentUser = databaseHelper.getCurrentLoggedInUser();
-        if (currentUser != null) {
-            // Fixed: Cast long to int for type compatibility
-            audioNotesList = databaseHelper.getUserAudioNotes((int) currentUser.getId());
-            displayAudioNotes();
-            updateAudioNotesCount();
-        }
-    }
-
-    private void updateAudioNotesCount() {
-        int count = audioNotesList.size();
-        tvAudioNotesCount.setText(count + (count == 1 ? " note" : " notes"));
-    }
-
-    private void displayAudioNotes() {
-        audioNotesContainer.removeAllViews();
-
-        if (audioNotesList.isEmpty()) {
-            // Show empty state
-            LinearLayout emptyState = new LinearLayout(getContext());
-            emptyState.setOrientation(LinearLayout.VERTICAL);
-            emptyState.setPadding(32, 64, 32, 64);
-            emptyState.setGravity(android.view.Gravity.CENTER);
-
-            TextView emptyTitle = new TextView(getContext());
-            emptyTitle.setText("No Audio Notes Yet");
-            emptyTitle.setTextSize(18);
-            emptyTitle.setTextColor(getResources().getColor(R.color.text_primary));
-            emptyTitle.setGravity(android.view.Gravity.CENTER);
-            emptyTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-
-            TextView emptyMessage = new TextView(getContext());
-            emptyMessage.setText("Tap 'Add Audio Note' to start recording or import audio files!");
-            emptyMessage.setTextSize(14);
-            emptyMessage.setTextColor(getResources().getColor(R.color.text_secondary));
-            emptyMessage.setGravity(android.view.Gravity.CENTER);
-            emptyMessage.setPadding(0, 16, 0, 0);
-
-            emptyState.addView(emptyTitle);
-            emptyState.addView(emptyMessage);
-            audioNotesContainer.addView(emptyState);
+        if (currentUser == null) {
+            Toast.makeText(getContext(), "Please sign in to view audio notes", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        for (AudioNote audioNote : audioNotesList) {
+        List<AudioNote> audioNotes = databaseHelper.getUserAudioNotes(currentUser.getId());
+        displayAudioNotes(audioNotes);
+
+        // Update count
+        tvAudioNotesCount.setText(audioNotes.size() + " notes");
+    }
+
+    private void displayAudioNotes(List<AudioNote> audioNotes) {
+        audioNotesContainer.removeAllViews();
+
+        if (audioNotes.isEmpty()) {
+            showEmptyState();
+            return;
+        }
+
+        for (AudioNote audioNote : audioNotes) {
             View audioNoteView = createAudioNoteView(audioNote);
             audioNotesContainer.addView(audioNoteView);
         }
     }
 
     private View createAudioNoteView(AudioNote audioNote) {
-        // Create audio note item programmatically
-        LinearLayout itemLayout = new LinearLayout(getContext());
-        itemLayout.setOrientation(LinearLayout.VERTICAL);
-        itemLayout.setPadding(16, 16, 16, 16);
+        View view = LayoutInflater.from(getContext()).inflate(R.layout.item_audio_note, null);
 
-        try {
-            itemLayout.setBackground(getResources().getDrawable(R.drawable.card_background));
-        } catch (Exception e) {
-            // Fallback if drawable doesn't exist
-            itemLayout.setBackgroundColor(getResources().getColor(android.R.color.white));
-        }
+        TextView tvTitle = view.findViewById(R.id.tvAudioTitle);
+        TextView tvDuration = view.findViewById(R.id.tvAudioDuration);
+        TextView tvCreatedDate = view.findViewById(R.id.tvCreatedDate);
+        TextView btnDelete = view.findViewById(R.id.btnDelete);
 
-        LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        itemParams.setMargins(0, 0, 0, 16);
-        itemLayout.setLayoutParams(itemParams);
-
-        // Title
-        TextView tvTitle = new TextView(getContext());
+        // Set audio note data
         tvTitle.setText(audioNote.getTitle());
-        tvTitle.setTextSize(16);
-        tvTitle.setTextColor(getResources().getColor(R.color.text_primary));
-        tvTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-
-        // Date and duration
-        LinearLayout infoLayout = new LinearLayout(getContext());
-        infoLayout.setOrientation(LinearLayout.HORIZONTAL);
-        infoLayout.setPadding(0, 8, 0, 16);
-
-        TextView tvDuration = new TextView(getContext());
         tvDuration.setText(audioNote.getDuration());
-        tvDuration.setTextSize(12);
-        tvDuration.setTextColor(getResources().getColor(R.color.text_secondary));
 
-        TextView tvSeparator = new TextView(getContext());
-        tvSeparator.setText(" • ");
-        tvSeparator.setTextSize(12);
-        tvSeparator.setTextColor(getResources().getColor(R.color.text_secondary));
+        // Format and set creation date
+        String formattedDate = formatDate(audioNote.getCreatedAt());
+        tvCreatedDate.setText(formattedDate);
 
-        TextView tvDate = new TextView(getContext());
-        tvDate.setText(audioNote.getCreatedAt());
-        tvDate.setTextSize(12);
-        tvDate.setTextColor(getResources().getColor(R.color.text_secondary));
+        // Set click listener for entire view to play audio
+        view.setOnClickListener(v -> playAudioNote(audioNote));
 
-        infoLayout.addView(tvDuration);
-        infoLayout.addView(tvSeparator);
-        infoLayout.addView(tvDate);
+        // Set delete button click listener - FIXED VERSION
+        btnDelete.setOnClickListener(v -> {
+            // Remove the click listener from parent to prevent play action
+            view.setOnClickListener(null);
 
-        // Buttons
-        LinearLayout buttonsLayout = new LinearLayout(getContext());
-        buttonsLayout.setOrientation(LinearLayout.HORIZONTAL);
+            // Show delete confirmation
+            showDeleteConfirmDialog(audioNote);
 
-        Button btnPlay = new Button(getContext());
-        btnPlay.setText(currentPlayingNote != null && currentPlayingNote.getId() == audioNote.getId() && isPlaying ? "Stop" : "Play");
-        btnPlay.setTextSize(12);
-
-        try {
-            btnPlay.setBackground(getResources().getDrawable(R.drawable.button_background));
-            btnPlay.setTextColor(getResources().getColor(R.color.white));
-        } catch (Exception e) {
-            // Fallback styling
-            btnPlay.setBackgroundColor(getResources().getColor(R.color.flashcard_blue));
-            btnPlay.setTextColor(getResources().getColor(android.R.color.white));
-        }
-
-        LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1
-        );
-        playParams.setMargins(0, 0, 8, 0);
-        btnPlay.setLayoutParams(playParams);
-
-        Button btnDelete = new Button(getContext());
-        btnDelete.setText("Delete");
-        btnDelete.setTextSize(12);
-
-        try {
-            btnDelete.setBackground(getResources().getDrawable(R.drawable.button_outline));
-            btnDelete.setTextColor(getResources().getColor(R.color.text_secondary));
-        } catch (Exception e) {
-            // Fallback styling
-            btnDelete.setBackgroundColor(getResources().getColor(android.R.color.transparent));
-            btnDelete.setTextColor(getResources().getColor(R.color.text_secondary));
-        }
-
-        LinearLayout.LayoutParams deleteParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1
-        );
-        deleteParams.setMargins(8, 0, 0, 0);
-        btnDelete.setLayoutParams(deleteParams);
-
-        // Button listeners
-        btnPlay.setOnClickListener(v -> {
-            if (currentPlayingNote != null && currentPlayingNote.getId() == audioNote.getId() && isPlaying) {
-                stopPlaying();
-            } else {
-                playAudioNote(audioNote);
-            }
+            // Restore the click listener after a short delay
+            view.postDelayed(() -> {
+                view.setOnClickListener(clickView -> playAudioNote(audioNote));
+            }, 100);
         });
 
-        btnDelete.setOnClickListener(v -> showDeleteConfirmDialog(audioNote));
-
-        buttonsLayout.addView(btnPlay);
-        buttonsLayout.addView(btnDelete);
-
-        // Add all views to item
-        itemLayout.addView(tvTitle);
-        itemLayout.addView(infoLayout);
-        itemLayout.addView(buttonsLayout);
-
-        return itemLayout;
+        return view;
     }
 
     private void playAudioNote(AudioNote audioNote) {
+        // Check if file exists
+        File audioFile = new File(audioNote.getFilePath());
+        if (!audioFile.exists()) {
+            Toast.makeText(getContext(), "Audio file not found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Stop any currently playing audio
+        stopCurrentPlayback();
+
         try {
-            // Stop current playback if any
-            if (isPlaying) {
-                stopPlaying();
-            }
-
-            // Check if file exists
-            File audioFile = new File(audioNote.getFilePath());
-            if (!audioFile.exists()) {
-                Toast.makeText(getContext(), "Audio file not found", Toast.LENGTH_SHORT).show();
-                return;
-            }
-
-            mediaPlayer = new MediaPlayer();
-            mediaPlayer.setDataSource(audioNote.getFilePath());
-            mediaPlayer.prepare();
-            mediaPlayer.start();
-
-            isPlaying = true;
-            currentPlayingNote = audioNote;
-
-            mediaPlayer.setOnCompletionListener(mp -> {
-                stopPlaying();
-                displayAudioNotes(); // Refresh to update button states
-            });
-
-            displayAudioNotes(); // Refresh to update button states
-            Toast.makeText(getContext(), "Playing: " + audioNote.getTitle(), Toast.LENGTH_SHORT).show();
-
-        } catch (IOException e) {
-            Log.e(TAG, "Error playing audio", e);
-            Toast.makeText(getContext(), "Error playing audio file", Toast.LENGTH_SHORT).show();
+            // Show playback dialog
+            showAudioPlaybackDialog(audioNote);
         } catch (Exception e) {
-            Log.e(TAG, "Unexpected error playing audio", e);
+            Log.e(TAG, "Error playing audio: " + e.getMessage());
             Toast.makeText(getContext(), "Error playing audio file", Toast.LENGTH_SHORT).show();
         }
     }
 
-    private void stopPlaying() {
+    private void showAudioPlaybackDialog(AudioNote audioNote) {
+        // Launch full-screen audio player activity
+        Intent intent = new Intent(getContext(), AudioPlayerActivity.class);
+        intent.putExtra("AUDIO_TITLE", audioNote.getTitle());
+        intent.putExtra("AUDIO_FILE_PATH", audioNote.getFilePath());
+        intent.putExtra("AUDIO_DURATION", audioNote.getDuration());
+        startActivity(intent);
+    }
+
+    private void updateSeekBar(SeekBar seekBar, TextView tvCurrentTime) {
+        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+            updateSeekBarRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+                        int currentPosition = mediaPlayer.getCurrentPosition();
+                        seekBar.setProgress(currentPosition);
+                        tvCurrentTime.setText(formatTime(currentPosition));
+                        playbackHandler.postDelayed(this, 1000);
+                    }
+                }
+            };
+            playbackHandler.post(updateSeekBarRunnable);
+        }
+    }
+
+    private void stopCurrentPlayback() {
         if (mediaPlayer != null) {
             try {
                 if (mediaPlayer.isPlaying()) {
                     mediaPlayer.stop();
                 }
+                mediaPlayer.reset();
                 mediaPlayer.release();
                 mediaPlayer = null;
             } catch (Exception e) {
-                Log.e(TAG, "Error stopping media player", e);
+                Log.e(TAG, "Error stopping playback: " + e.getMessage());
             }
         }
-        isPlaying = false;
-        currentPlayingNote = null;
+
+        if (updateSeekBarRunnable != null) {
+            playbackHandler.removeCallbacks(updateSeekBarRunnable);
+        }
+    }
+
+    private String formatTime(int milliseconds) {
+        int seconds = milliseconds / 1000;
+        int minutes = seconds / 60;
+        seconds = seconds % 60;
+        return String.format(Locale.getDefault(), "%d:%02d", minutes, seconds);
     }
 
     private void showDeleteConfirmDialog(AudioNote audioNote) {
         new AlertDialog.Builder(getContext())
                 .setTitle("Delete Audio Note")
-                .setMessage("Are you sure you want to delete \"" + audioNote.getTitle() + "\"?")
+                .setMessage("Are you sure you want to delete \"" + audioNote.getTitle() + "\"?\n\nThis action cannot be undone.")
+                .setIcon(R.drawable.ic_warning)
                 .setPositiveButton("Delete", (dialog, which) -> deleteAudioNote(audioNote))
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
     private void deleteAudioNote(AudioNote audioNote) {
-        // Stop playing if this note is currently playing
-        if (currentPlayingNote != null && currentPlayingNote.getId() == audioNote.getId()) {
-            stopPlaying();
-        }
-
-        // Delete file
-        File audioFile = new File(audioNote.getFilePath());
-        if (audioFile.exists()) {
-            boolean deleted = audioFile.delete();
-            if (!deleted) {
-                Log.w(TAG, "Could not delete audio file: " + audioFile.getPath());
-            }
-        }
-
         // Delete from database
         boolean deleted = databaseHelper.deleteAudioNote(audioNote.getId());
+
         if (deleted) {
-            loadAudioNotes(); // Refresh list
-            Toast.makeText(getContext(), "Audio note deleted", Toast.LENGTH_SHORT).show();
+            // Delete physical file
+            try {
+                File audioFile = new File(audioNote.getFilePath());
+                if (audioFile.exists()) {
+                    audioFile.delete();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error deleting audio file: " + e.getMessage());
+            }
+
+            Toast.makeText(getContext(), "Audio note deleted successfully! 🗑️", Toast.LENGTH_SHORT).show();
+            loadAudioNotes(); // Refresh the list
         } else {
-            Toast.makeText(getContext(), "Error deleting audio note", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), "Failed to delete audio note", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showEmptyState() {
+        // Create the empty state view programmatically instead of inflating
+        LinearLayout emptyStateLayout = new LinearLayout(getContext());
+        emptyStateLayout.setOrientation(LinearLayout.VERTICAL);
+        emptyStateLayout.setGravity(android.view.Gravity.CENTER);
+        emptyStateLayout.setPadding(32, 80, 32, 32);
+
+        // Create and configure the empty state icon
+        TextView iconView = new TextView(getContext());
+        iconView.setText("🎵");
+        iconView.setTextSize(48);
+        iconView.setGravity(android.view.Gravity.CENTER);
+        iconView.setAlpha(0.6f);
+
+        // Create and configure the title
+        TextView titleView = new TextView(getContext());
+        titleView.setText("No Audio Notes Yet");
+        titleView.setTextSize(20);
+        titleView.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleView.setTextColor(getResources().getColor(R.color.text_primary, null));
+        titleView.setGravity(android.view.Gravity.CENTER);
+
+        // Create and configure the description
+        TextView descView = new TextView(getContext());
+        descView.setText("Tap 'Add Audio Note' below to import your first audio file!");
+        descView.setTextSize(14);
+        descView.setTextColor(getResources().getColor(R.color.text_secondary, null));
+        descView.setGravity(android.view.Gravity.CENTER);
+
+        // Set layout parameters with margins
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        iconParams.setMargins(0, 0, 0, 24);
+        iconView.setLayoutParams(iconParams);
+
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleParams.setMargins(0, 0, 0, 8);
+        titleView.setLayoutParams(titleParams);
+
+        LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        descParams.setMargins(0, 0, 0, 0);
+        descView.setLayoutParams(descParams);
+
+        // Add all views to the empty state layout
+        emptyStateLayout.addView(iconView);
+        emptyStateLayout.addView(titleView);
+        emptyStateLayout.addView(descView);
+
+        // Add the empty state to the container
+        audioNotesContainer.addView(emptyStateLayout);
+    }
+
+    // FIXED: Import audio files instead of recording
+    private void showAddAudioNoteDialog() {
+        new AlertDialog.Builder(getContext())
+                .setTitle("Add Audio Note")
+                .setMessage("Import an audio file from your device to add as an audio note.")
+                .setIcon(R.drawable.ic_audio_notes)
+                .setPositiveButton("📁 Browse Files", (dialog, which) -> openFilePicker())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void openFilePicker() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("audio/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+
+        try {
+            audioPickerLauncher.launch(Intent.createChooser(intent, "Select Audio File"));
+        } catch (Exception e) {
+            Log.e(TAG, "Error opening file picker: " + e.getMessage());
+            Toast.makeText(getContext(), "Error opening file picker", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void importAudioFile(Uri audioUri) {
+        try {
+            // Get file name and details
+            String fileName = getFileName(audioUri);
+            if (fileName == null) {
+                fileName = "Audio_" + System.currentTimeMillis() + ".mp3";
+            }
+
+            // Create app directory for audio files
+            File audioDir = new File(getContext().getExternalFilesDir(null), "audio_notes");
+            if (!audioDir.exists()) {
+                audioDir.mkdirs();
+            }
+
+            // Create destination file
+            File destinationFile = new File(audioDir, fileName);
+
+            // Copy file from URI to app directory
+            copyFile(audioUri, destinationFile);
+
+            // Get audio duration
+            String duration = getAudioDuration(destinationFile.getAbsolutePath());
+
+            // Show dialog to enter title
+            showTitleInputDialog(destinationFile.getAbsolutePath(), fileName, duration);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error importing audio file: " + e.getMessage());
+            Toast.makeText(getContext(), "Error importing audio file", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String getFileName(Uri uri) {
+        String result = null;
+        if (uri.getScheme().equals("content")) {
+            try (Cursor cursor = getContext().getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex >= 0) {
+                        result = cursor.getString(nameIndex);
+                    }
+                }
+            }
+        }
+        if (result == null) {
+            result = uri.getPath();
+            int cut = result.lastIndexOf('/');
+            if (cut != -1) {
+                result = result.substring(cut + 1);
+            }
+        }
+        return result;
+    }
+
+    private void copyFile(Uri sourceUri, File destinationFile) throws Exception {
+        try (InputStream inputStream = getContext().getContentResolver().openInputStream(sourceUri);
+             FileOutputStream outputStream = new FileOutputStream(destinationFile)) {
+
+            byte[] buffer = new byte[4096];
+            int length;
+            while ((length = inputStream.read(buffer)) > 0) {
+                outputStream.write(buffer, 0, length);
+            }
+        }
+    }
+
+    private String getAudioDuration(String filePath) {
+        try {
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            retriever.setDataSource(filePath);
+            String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            retriever.release();
+
+            if (durationStr != null) {
+                int duration = Integer.parseInt(durationStr);
+                return formatTime(duration);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting audio duration: " + e.getMessage());
+        }
+        return "Unknown";
+    }
+
+    private void showTitleInputDialog(String filePath, String fileName, String duration) {
+        // Create input field
+        EditText input = new EditText(getContext());
+        input.setHint("Enter audio note title");
+
+        // Pre-fill with filename (without extension)
+        String defaultTitle = fileName;
+        int dotIndex = defaultTitle.lastIndexOf('.');
+        if (dotIndex > 0) {
+            defaultTitle = defaultTitle.substring(0, dotIndex);
+        }
+        input.setText(defaultTitle);
+        input.selectAll();
+
+        // Create a final reference to defaultTitle for use in lambda
+        final String finalDefaultTitle = defaultTitle;
+
+        new AlertDialog.Builder(getContext())
+                .setTitle("Audio Note Title")
+                .setMessage("Duration: " + duration)
+                .setView(input)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    String title = input.getText().toString().trim();
+                    if (title.isEmpty()) {
+                        title = finalDefaultTitle; // Use final variable
+                    }
+                    saveAudioNote(title, filePath, duration);
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    // Delete the copied file if user cancels
+                    deleteFileIfExists(filePath);
+                })
+                .show();
+    }
+
+    private void saveAudioNote(String title, String filePath, String duration) {
+        User currentUser = databaseHelper.getCurrentLoggedInUser();
+        if (currentUser == null) {
+            Toast.makeText(getContext(), "Please sign in to save audio notes", Toast.LENGTH_SHORT).show();
+            // Delete the file if user not logged in
+            deleteFileIfExists(filePath);
+            return;
+        }
+
+        try {
+            // Save to database using the correct method signature: addAudioNote(int userId, String title, String filePath)
+            long result = databaseHelper.addAudioNote(currentUser.getId(), title, filePath);
+
+            if (result != -1) {
+                // Also update the duration separately since it's not in the main addAudioNote method
+                databaseHelper.updateAudioNote((int)result, title, duration);
+
+                Toast.makeText(getContext(), "Audio note imported successfully! 🎵", Toast.LENGTH_SHORT).show();
+                loadAudioNotes(); // Refresh the list
+                Log.d(TAG, "Audio note saved successfully with ID: " + result);
+            } else {
+                Toast.makeText(getContext(), "Failed to save audio note to database", Toast.LENGTH_SHORT).show();
+                // Delete the file if database save failed
+                deleteFileIfExists(filePath);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error saving audio note: " + e.getMessage());
+            Toast.makeText(getContext(), "Error saving audio note: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            // Delete the file if there was an exception
+            deleteFileIfExists(filePath);
+        }
+    }
+
+    // Helper method for safe file deletion
+    private void deleteFileIfExists(String filePath) {
+        try {
+            File file = new File(filePath);
+            if (file.exists()) {
+                boolean deleted = file.delete();
+                if (deleted) {
+                    Log.d(TAG, "Cleaned up file: " + filePath);
+                } else {
+                    Log.w(TAG, "Failed to delete file: " + filePath);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error deleting file: " + e.getMessage());
+        }
+    }
+
+    private String getCurrentDateTime() {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+        return sdf.format(new Date());
+    }
+
+    private String formatDate(String dateString) {
+        try {
+            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            SimpleDateFormat outputFormat = new SimpleDateFormat("MMM dd, yyyy", Locale.getDefault());
+            Date date = inputFormat.parse(dateString);
+            return outputFormat.format(date);
+        } catch (Exception e) {
+            return dateString; // Return original if parsing fails
         }
     }
 
@@ -594,48 +525,17 @@ public class AudioNotesFragment extends Fragment {
     }
 
     @Override
-    public void onDestroy() {
-        super.onDestroy();
-
-        // Clean up media resources
-        if (mediaRecorder != null) {
-            try {
-                mediaRecorder.release();
-            } catch (Exception e) {
-                Log.e(TAG, "Error releasing media recorder", e);
-            }
-            mediaRecorder = null;
-        }
-
-        if (mediaPlayer != null) {
-            try {
-                if (mediaPlayer.isPlaying()) {
-                    mediaPlayer.stop();
-                }
-                mediaPlayer.release();
-            } catch (Exception e) {
-                Log.e(TAG, "Error releasing media player", e);
-            }
-            mediaPlayer = null;
-        }
-
-        if (databaseHelper != null) {
-            databaseHelper.close();
-        }
+    public void onPause() {
+        super.onPause();
+        stopCurrentPlayback(); // Stop any playing audio when leaving fragment
     }
 
     @Override
-    public void onPause() {
-        super.onPause();
-
-        // Stop recording if in progress
-        if (isRecording) {
-            stopRecording();
-        }
-
-        // Stop playback if in progress
-        if (isPlaying) {
-            stopPlaying();
+    public void onDestroy() {
+        super.onDestroy();
+        stopCurrentPlayback();
+        if (databaseHelper != null) {
+            databaseHelper.close();
         }
     }
 }
